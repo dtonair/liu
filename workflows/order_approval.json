@@ -1,0 +1,37 @@
+{
+  "name": "order_approval",
+  "version": 1,
+  "initial": "reserve_inventory",
+  "steps": [
+    {
+      "id": "reserve_inventory",
+      "type": "activity",
+      "activity": "reserve_inventory",
+      "next": "manager_approval"
+    },
+    {
+      "id": "manager_approval",
+      "type": "wait_signal",
+      "signal": "manager_approval",
+      "next": "capture_payment",
+      "timeout_next": "cancel_order",
+      "timeout_after": "24h"
+    },
+    {
+      "id": "capture_payment",
+      "type": "activity",
+      "activity": "capture_payment",
+      "next": "done"
+    },
+    {
+      "id": "cancel_order",
+      "type": "activity",
+      "activity": "release_inventory",
+      "next": "done"
+    },
+    {
+      "id": "done",
+      "type": "end"
+    }
+  ]
+}

@@ -1,3 +1,6 @@
+// Package model defines the workflow definition IR (the internal
+// representation parsed from the JSON DSL) and the core persisted data types:
+// instances, tasks, timers, signals, history events, and outbox records.
 package model
 
 import (
@@ -11,6 +14,7 @@ import (
 // StepType enumerates the four kernel step types (spec FR2).
 type StepType string
 
+// The four supported step types.
 const (
 	StepActivity   StepType = "activity"
 	StepWaitSignal StepType = "wait_signal"

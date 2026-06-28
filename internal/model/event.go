@@ -35,6 +35,7 @@ type Event struct {
 // TaskStatus is the lifecycle of a queued unit of work.
 type TaskStatus string
 
+// Task lifecycle states.
 const (
 	TaskQueued TaskStatus = "QUEUED"
 	TaskLeased TaskStatus = "LEASED"
@@ -65,6 +66,7 @@ type Task struct {
 // TimerKind distinguishes a wait_signal timeout from a sleep_until delay.
 type TimerKind string
 
+// Timer kinds.
 const (
 	TimerSignalTimeout TimerKind = "signal_timeout"
 	TimerSleep         TimerKind = "sleep"

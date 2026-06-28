@@ -8,6 +8,7 @@ import (
 // InstanceStatus is the lifecycle state of a workflow instance.
 type InstanceStatus string
 
+// Instance lifecycle states.
 const (
 	// StatusRunnable means the scheduler should advance the instance.
 	StatusRunnable InstanceStatus = "RUNNABLE"

@@ -15,13 +15,15 @@ import (
 
 	"github.com/dtonair/liu/internal/model"
 	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/internal/telemetry"
 )
 
 // Engine drives workflow instances over a Store.
 type Engine struct {
-	store store.Store
-	clock Clock
-	log   *slog.Logger
+	store   store.Store
+	clock   Clock
+	log     *slog.Logger
+	metrics *telemetry.Metrics
 
 	mu       sync.RWMutex
 	defCache map[string]*model.Definition // name|version -> def
@@ -36,6 +38,9 @@ func WithClock(c Clock) Option { return func(e *Engine) { e.clock = c } }
 // WithLogger sets the engine logger.
 func WithLogger(l *slog.Logger) Option { return func(e *Engine) { e.log = l } }
 
+// WithMetrics attaches a metrics sink. A nil sink is safe (no-op).
+func WithMetrics(m *telemetry.Metrics) Option { return func(e *Engine) { e.metrics = m } }
+
 // New constructs an Engine over the given Store.
 func New(s store.Store, opts ...Option) *Engine {
 	e := &Engine{
@@ -49,6 +54,9 @@ func New(s store.Store, opts ...Option) *Engine {
 	}
 	return e
 }
+
+// Metrics returns the engine's metrics sink (may be nil).
+func (e *Engine) Metrics() *telemetry.Metrics { return e.metrics }
 
 func cacheKey(name string, version int) string { return fmt.Sprintf("%s|%d", name, version) }
 
@@ -168,6 +176,10 @@ func (e *Engine) Advance(ctx context.Context, instanceID string) error {
 	if err != nil {
 		return err
 	}
+	ctx, span := telemetry.StartSpan(ctx, "engine.advance", instanceID)
+	defer span.End()
+	start := e.clock.Now()
+	defer func() { e.metrics.ObserveAdvance(e.clock.Now().Sub(start).Seconds()) }()
 	return e.store.Tx(ctx, func(tx store.Tx) error {
 		inst, err := tx.GetInstanceForUpdate(ctx, instanceID)
 		if err != nil {
@@ -295,7 +307,8 @@ func (e *Engine) OnTaskComplete(ctx context.Context, taskID, workerID, leaseToke
 	if err != nil {
 		return err
 	}
-	return e.store.Tx(ctx, func(tx store.Tx) error {
+	advanced := false
+	err = e.store.Tx(ctx, func(tx store.Tx) error {
 		if err := tx.CompleteTask(ctx, taskID, leaseToken, output); err != nil {
 			return err
 		}
@@ -316,8 +329,14 @@ func (e *Engine) OnTaskComplete(ctx context.Context, taskID, workerID, leaseToke
 		inst.CurrentStep = step.Next
 		inst.Status = model.StatusRunnable
 		inst.UpdatedAt = now
+		advanced = true
 		return tx.UpdateInstance(ctx, inst)
 	})
+	if err == nil && advanced {
+		e.metrics.TaskCompleted()
+		e.metrics.Transition(model.EventTaskCompleted)
+	}
+	return err
 }
 
 // OnTaskFail records a worker's task failure, applying the step's retry policy:
@@ -332,7 +351,9 @@ func (e *Engine) OnTaskFail(ctx context.Context, taskID, workerID, leaseToken, e
 	if err != nil {
 		return err
 	}
-	return e.store.Tx(ctx, func(tx store.Tx) error {
+	var retried, failed bool
+	err = e.store.Tx(ctx, func(tx store.Tx) error {
+		retried, failed = false, false
 		inst, err := tx.GetInstanceForUpdate(ctx, task.InstanceID)
 		if err != nil {
 			return err
@@ -351,8 +372,10 @@ func (e *Engine) OnTaskFail(ctx context.Context, taskID, workerID, leaseToken, e
 			}
 			payload, _ := json.Marshal(map[string]any{"error": errMsg, "attempt": task.Attempt, "next_visible_at": dec.nextVisit})
 			_, err := tx.AppendEvent(ctx, &model.Event{InstanceID: inst.ID, Type: model.EventTaskRetryScheduled, StepID: task.StepID, Payload: payload, CreatedAt: now})
+			retried = true
 			return err
 		}
+		failed = true
 
 		// Terminal failure.
 		if err := tx.FailTask(ctx, taskID, leaseToken); err != nil {
@@ -373,6 +396,17 @@ func (e *Engine) OnTaskFail(ctx context.Context, taskID, workerID, leaseToken, e
 		}
 		return tx.UpdateInstance(ctx, inst)
 	})
+	if err == nil {
+		switch {
+		case retried:
+			e.metrics.RetryScheduled()
+			e.metrics.Transition(model.EventTaskRetryScheduled)
+		case failed:
+			e.metrics.TaskFailed()
+			e.metrics.Transition(model.EventWorkflowFailed)
+		}
+	}
+	return err
 }
 
 // SignalInstance records an external signal in the inbox (spec FR9). The
@@ -442,7 +476,7 @@ func (e *Engine) OnTimerFired(ctx context.Context, timer *model.Timer) error {
 	if err != nil {
 		return err
 	}
-	return e.store.Tx(ctx, func(tx store.Tx) error {
+	err = e.store.Tx(ctx, func(tx store.Tx) error {
 		inst, err := tx.GetInstanceForUpdate(ctx, timer.InstanceID)
 		if err != nil {
 			return err
@@ -471,6 +505,11 @@ func (e *Engine) OnTimerFired(ctx context.Context, timer *model.Timer) error {
 		inst.UpdatedAt = now
 		return tx.UpdateInstance(ctx, inst)
 	})
+	if err == nil {
+		e.metrics.TimerFired()
+		e.metrics.Transition(model.EventTimerFired)
+	}
+	return err
 }
 
 func taskIdempotencyKey(inst *model.Instance, step model.Step) string {

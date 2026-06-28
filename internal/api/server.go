@@ -51,9 +51,12 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 
-	// Health checks are unauthenticated.
+	// Health and metrics are unauthenticated (scraped by infra).
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/readyz", s.handleReadyz)
+	if m := s.engine.Metrics(); m != nil {
+		r.Handle("/metrics", m.Handler())
+	}
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.auth.Middleware)

@@ -44,6 +44,7 @@ func (s *LeaseSweeper) RunOnce(ctx context.Context) int {
 	}
 	if n > 0 {
 		s.engine.log.Info("lease sweeper reclaimed tasks", "count", n)
+		s.engine.metrics.LeasesReclaimed(n)
 	}
 	return n
 }

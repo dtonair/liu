@@ -51,14 +51,28 @@ func main() {
 		}
 	}
 
-	eng := engine.New(pg, engine.WithLogger(log))
+	metrics := telemetry.NewMetrics()
+	eng := engine.New(pg, engine.WithLogger(log), engine.WithMetrics(metrics))
 
-	// Background loops. Phase 8 wraps these in leader election; for now they run
-	// directly (single-active-scheduler assumption).
-	go runLoop(ctx, log, "scheduler", engine.NewScheduler(eng, 100*time.Millisecond, 100).Run)
-	go runLoop(ctx, log, "timers", engine.NewTimerLoop(eng, 250*time.Millisecond, 100).Run)
-	go runLoop(ctx, log, "sweeper", engine.NewLeaseSweeper(eng, time.Second).Run)
-	go runLoop(ctx, log, "outbox", engine.NewOutboxPublisher(eng, engine.LogSink{Log: log}, 500*time.Millisecond, 100).Run)
+	// Leader election: only the advisory-lock holder runs the mutating loops, so
+	// timers never double-fire across replicas. The API layer runs everywhere.
+	const leaderKey = 0x11A20001
+	lead, isLeader, err := store.AcquireLeadership(ctx, pg.Pool(), leaderKey)
+	if err != nil {
+		log.Error("acquire leadership", "error", err)
+		os.Exit(1)
+	}
+	if isLeader {
+		defer lead.Release(context.Background())
+		log.Info("this replica is the scheduler leader")
+		go runLoop(ctx, log, "scheduler", engine.NewScheduler(eng, 100*time.Millisecond, 100).Run)
+		go runLoop(ctx, log, "timers", engine.NewTimerLoop(eng, 250*time.Millisecond, 100).Run)
+		go runLoop(ctx, log, "sweeper", engine.NewLeaseSweeper(eng, time.Second).Run)
+		go runLoop(ctx, log, "outbox", engine.NewOutboxPublisher(eng, engine.LogSink{Log: log}, 500*time.Millisecond, 100).Run)
+		go runLoop(ctx, log, "sampler", engine.NewMetricsSampler(eng, 5*time.Second).Run)
+	} else {
+		log.Info("another replica holds scheduler leadership; running API only")
+	}
 
 	auth := &security.Authenticator{
 		Disabled: envBool("LIU_AUTH_DISABLED", false),

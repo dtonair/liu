@@ -10,7 +10,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // Sentinel errors returned across all Store implementations.

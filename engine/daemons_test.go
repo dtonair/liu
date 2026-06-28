@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/store"
 )
 
 // retryDef is a one-activity workflow with a deterministic (jitter-free) retry

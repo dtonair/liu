@@ -9,8 +9,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/dtonair/liu/internal/telemetry"
-	"github.com/dtonair/liu/internal/worker"
+	"github.com/dtonair/liu/telemetry"
+	"github.com/dtonair/liu/worker"
 )
 
 var version = "dev"

@@ -41,4 +41,4 @@ run-worker:
 	LIU_ACTIVITY_TYPES=reserve_inventory,capture_payment,release_inventory $(GO) run ./cmd/worker
 
 chaos:
-	LIU_TEST_DATABASE_URL="$(DATABASE_URL)" $(GO) test -run Chaos -v ./internal/engine
+	LIU_TEST_DATABASE_URL="$(DATABASE_URL)" $(GO) test -run Chaos -v ./engine

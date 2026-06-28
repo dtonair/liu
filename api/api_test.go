@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dtonair/liu/internal/engine"
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/security"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/engine"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/security"
+	"github.com/dtonair/liu/store"
 )
 
 func testServer(t *testing.T) (*httptest.Server, *engine.Engine, store.Store) {
@@ -60,7 +60,7 @@ func do(t *testing.T, method, url, tenant string, body any) (*http.Response, []b
 
 func registerOrderApproval(t *testing.T, base string) {
 	t.Helper()
-	b, _ := os.ReadFile(filepath.Join("..", "..", "workflows", "order_approval.json"))
+	b, _ := os.ReadFile(filepath.Join("..", "workflows", "order_approval.json"))
 	var def map[string]any
 	_ = json.Unmarshal(b, &def)
 	resp, body := do(t, http.MethodPost, base+"/v1/definitions", "demo", def)

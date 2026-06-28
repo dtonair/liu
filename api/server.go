@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dtonair/liu/internal/engine"
-	"github.com/dtonair/liu/internal/security"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/engine"
+	"github.com/dtonair/liu/security"
+	"github.com/dtonair/liu/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )

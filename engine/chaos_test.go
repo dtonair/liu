@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/store"
 )
 
 // TestChaosWorkerCrashRecovery is the Phase 8 reliability proof: a worker leases
@@ -40,7 +40,7 @@ func TestChaosWorkerCrashRecovery(t *testing.T) {
 	sched := NewScheduler(eng, 0, 0)
 	sweeper := NewLeaseSweeper(eng, 0)
 
-	b, _ := os.ReadFile(filepath.Join("..", "..", "workflows", "order_approval.json"))
+	b, _ := os.ReadFile(filepath.Join("..", "workflows", "order_approval.json"))
 	def, _ := model.ParseDefinition(b)
 	if err := eng.RegisterDefinition(ctx, def); err != nil {
 		t.Fatal(err)

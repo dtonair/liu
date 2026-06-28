@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // handleCreateDefinition registers a workflow definition (spec FR1). Structural

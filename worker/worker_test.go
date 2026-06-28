@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dtonair/liu/internal/api"
-	"github.com/dtonair/liu/internal/engine"
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/security"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/api"
+	"github.com/dtonair/liu/engine"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/security"
+	"github.com/dtonair/liu/store"
 )
 
 // testEngine spins up an in-memory engine behind httptest with the scheduler
@@ -28,7 +28,7 @@ func testEngine(t *testing.T) (string, *engine.Engine) {
 	t.Cleanup(cancel)
 	go func() { _ = engine.NewScheduler(eng, 10*time.Millisecond, 100).Run(ctx) }()
 
-	b, _ := os.ReadFile(filepath.Join("..", "..", "workflows", "order_approval.json"))
+	b, _ := os.ReadFile(filepath.Join("..", "workflows", "order_approval.json"))
 	def, err := model.ParseDefinition(b)
 	if err != nil {
 		t.Fatal(err)

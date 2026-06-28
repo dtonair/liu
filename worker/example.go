@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // OrderApprovalHandlers returns the demo order_approval activity handlers keyed

@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // Client speaks the engine's HTTP worker protocol.

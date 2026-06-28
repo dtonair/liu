@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/store"
 )
 
 // MetricsSampler periodically samples instance counts by status into the

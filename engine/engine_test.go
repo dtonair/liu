@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/store"
 )
 
 func loadOrderApproval(t *testing.T) *model.Definition {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "workflows", "order_approval.json"))
+	b, err := os.ReadFile(filepath.Join("..", "workflows", "order_approval.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

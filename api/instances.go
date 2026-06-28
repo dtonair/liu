@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/dtonair/liu/internal/engine"
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/engine"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/store"
 	"github.com/go-chi/chi/v5"
 )
 

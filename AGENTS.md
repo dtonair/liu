@@ -17,13 +17,13 @@ Spec + plan: `~/code/brain/spec/20260628/0(1)_{spec,impl}_simple_workflow_engine
 ```
 cmd/engine    control plane: API + leader-only loops (scheduler/timers/sweeper/outbox/sampler)
 cmd/worker    out-of-engine task worker (demo order_approval handlers)
-internal/model      Definition IR, DSL validation, checksum; instance/task/timer/signal/event/outbox types
-internal/store      Store interface + Tx; in-memory impl; Postgres impl (pgx); embedded migrations; leader election
-internal/engine     transitions (engine.go), retry calc, scheduler, timer loop, lease sweeper, outbox publisher, metrics sampler, clock
-internal/api        chi router, handlers (definitions/instances/tasks/signals), health, /metrics
-internal/security   JWT/header auth + tenant context
-internal/telemetry  slog logger, Prometheus metrics, OTel trace API
-internal/worker     worker HTTP client + Runner (poll/dispatch/heartbeat)
+model      Definition IR, DSL validation, checksum; instance/task/timer/signal/event/outbox types
+store      Store interface + Tx; in-memory impl; Postgres impl (pgx); embedded migrations; leader election
+engine     transitions (engine.go), retry calc, scheduler, timer loop, lease sweeper, outbox publisher, metrics sampler, clock
+api        chi router, handlers (definitions/instances/tasks/signals), health, /metrics
+security   JWT/header auth + tenant context
+telemetry  slog logger, Prometheus metrics, OTel trace API
+worker     worker HTTP client + Runner (poll/dispatch/heartbeat)
 workflows/          sample definition (order_approval.json)
 ```
 

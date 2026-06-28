@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // RunStoreContract exercises the full Store contract. Both the in-memory and

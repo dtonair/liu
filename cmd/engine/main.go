@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dtonair/liu/internal/api"
-	"github.com/dtonair/liu/internal/engine"
-	"github.com/dtonair/liu/internal/security"
-	"github.com/dtonair/liu/internal/store"
-	"github.com/dtonair/liu/internal/telemetry"
+	"github.com/dtonair/liu/api"
+	"github.com/dtonair/liu/engine"
+	"github.com/dtonair/liu/security"
+	"github.com/dtonair/liu/store"
+	"github.com/dtonair/liu/telemetry"
 )
 
 var version = "dev"

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // Handler executes the business logic for one activity. The returned output is

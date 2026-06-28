@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // OutboxSink relays a committed outbox record to an external destination

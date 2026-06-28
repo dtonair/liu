@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dtonair/liu/internal/store"
+	"github.com/dtonair/liu/store"
 	"github.com/go-chi/chi/v5"
 )
 

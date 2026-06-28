@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
-	"github.com/dtonair/liu/internal/store"
-	"github.com/dtonair/liu/internal/telemetry"
+	"github.com/dtonair/liu/model"
+	"github.com/dtonair/liu/store"
+	"github.com/dtonair/liu/telemetry"
 )
 
 // Engine drives workflow instances over a Store.

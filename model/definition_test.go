@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseOrderApproval(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "workflows", "order_approval.json"))
+	b, err := os.ReadFile(filepath.Join("..", "workflows", "order_approval.json"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestParseOrderApproval(t *testing.T) {
 }
 
 func TestChecksumStable(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "workflows", "order_approval.json"))
+	b, err := os.ReadFile(filepath.Join("..", "workflows", "order_approval.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

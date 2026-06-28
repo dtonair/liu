@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // retryDecision is the outcome of evaluating a failed task against its policy.

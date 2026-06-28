@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dtonair/liu/internal/model"
+	"github.com/dtonair/liu/model"
 )
 
 // MemStore is an in-memory Store implementation used for local development and

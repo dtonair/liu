@@ -12,6 +12,13 @@ linters:
     - unused
     - misspell
     - revive
+  settings:
+    revive:
+      rules:
+        # ctx is unused in some interface implementations (e.g. the in-memory
+        # store); requiring it in the signature is correct, so don't flag it.
+        - name: unused-parameter
+          disabled: true
   exclusions:
     rules:
       - path: _test\.go

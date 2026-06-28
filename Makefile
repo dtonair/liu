@@ -11,8 +11,9 @@ test:
 	$(GO) test $(PKG)
 
 # Runs the full suite including Postgres-backed tests (requires `make up`).
+# Postgres tests skip automatically when LIU_TEST_DATABASE_URL is unset.
 test-pg:
-	LIU_TEST_DATABASE_URL="$(DATABASE_URL)" $(GO) test -tags=postgres $(PKG)
+	LIU_TEST_DATABASE_URL="$(DATABASE_URL)" $(GO) test $(PKG)
 
 vet:
 	$(GO) vet ./...
@@ -40,4 +41,4 @@ run-worker:
 	LIU_ACTIVITY_TYPES=reserve_inventory,capture_payment,release_inventory $(GO) run ./cmd/worker
 
 chaos:
-	$(GO) test -tags=postgres -run Chaos -v ./internal/engine
+	LIU_TEST_DATABASE_URL="$(DATABASE_URL)" $(GO) test -run Chaos -v ./internal/engine

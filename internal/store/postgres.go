@@ -109,11 +109,11 @@ func (s *PgStore) CreateInstance(ctx context.Context, inst *model.Instance) (*mo
 	// Attempt insert; ON CONFLICT on the partial idempotency index does nothing.
 	tag, err := s.pool.Exec(ctx, `
 		INSERT INTO workflow_instances
-			(id, workflow_name, version, current_step, status, tenant_id, input_json, idempotency_key, error, row_version, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'',0,$9,$10)
+			(id, workflow_name, version, current_step, status, tenant_id, input_json, context_json, idempotency_key, error, row_version, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'',0,$10,$11)
 		ON CONFLICT (tenant_id, idempotency_key) WHERE idempotency_key <> '' DO NOTHING`,
 		inst.ID, inst.WorkflowName, inst.Version, inst.CurrentStep, inst.Status, inst.TenantID,
-		nullableJSON(inst.Input), inst.IdempotencyKey, inst.CreatedAt, inst.UpdatedAt)
+		nullableJSON(inst.Input), nullableJSON(inst.Context), inst.IdempotencyKey, inst.CreatedAt, inst.UpdatedAt)
 	if err != nil {
 		return nil, false, err
 	}
@@ -348,9 +348,9 @@ func (t *pgTx) GetInstanceForUpdate(ctx context.Context, id string) (*model.Inst
 func (t *pgTx) UpdateInstance(ctx context.Context, inst *model.Instance) error {
 	tag, err := t.tx.Exec(ctx, `
 		UPDATE workflow_instances
-		SET current_step=$1, status=$2, error=$3, input_json=$4, updated_at=$5, row_version=row_version+1
-		WHERE id=$6 AND row_version=$7`,
-		inst.CurrentStep, inst.Status, inst.Error, nullableJSON(inst.Input), inst.UpdatedAt, inst.ID, inst.RowVersion)
+		SET current_step=$1, status=$2, error=$3, input_json=$4, context_json=$5, updated_at=$6, row_version=row_version+1
+		WHERE id=$7 AND row_version=$8`,
+		inst.CurrentStep, inst.Status, inst.Error, nullableJSON(inst.Input), nullableJSON(inst.Context), inst.UpdatedAt, inst.ID, inst.RowVersion)
 	if err != nil {
 		return err
 	}
@@ -487,7 +487,7 @@ func (t *pgTx) EnqueueOutbox(ctx context.Context, r *model.OutboxRecord) error {
 
 // --- scan helpers ---
 
-const instanceCols = `SELECT id, workflow_name, version, current_step, status, tenant_id, input_json, idempotency_key, error, row_version, created_at, updated_at FROM workflow_instances`
+const instanceCols = `SELECT id, workflow_name, version, current_step, status, tenant_id, input_json, context_json, idempotency_key, error, row_version, created_at, updated_at FROM workflow_instances`
 
 const taskColList = `id, instance_id, step_id, tenant_id, activity_type, status, payload_json, idempotency_key, attempt, max_attempts, priority, visible_at, leased_by, lease_token, lease_expires_at, created_at`
 
@@ -503,11 +503,13 @@ type rowScanner interface {
 func scanInstance(r rowScanner) (*model.Instance, error) {
 	var inst model.Instance
 	var input []byte
+	var contextJSON []byte
 	if err := r.Scan(&inst.ID, &inst.WorkflowName, &inst.Version, &inst.CurrentStep, &inst.Status, &inst.TenantID,
-		&input, &inst.IdempotencyKey, &inst.Error, &inst.RowVersion, &inst.CreatedAt, &inst.UpdatedAt); err != nil {
+		&input, &contextJSON, &inst.IdempotencyKey, &inst.Error, &inst.RowVersion, &inst.CreatedAt, &inst.UpdatedAt); err != nil {
 		return nil, err
 	}
 	inst.Input = raw(input)
+	inst.Context = raw(contextJSON)
 	return &inst, nil
 }
 

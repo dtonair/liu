@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -46,15 +48,16 @@ func newHarness(t *testing.T) *harness {
 }
 
 // leaseAndComplete simulates a worker completing the next task of activityType.
-func (h *harness) leaseAndComplete(t *testing.T, activityType string) {
+func (h *harness) leaseAndComplete(t *testing.T, activityType string, output json.RawMessage) *model.Task {
 	t.Helper()
 	leased, err := h.st.LeaseTasks(h.ctx, store.LeaseRequest{TenantID: "demo", ActivityType: activityType, WorkerID: "w1", Now: h.clk.Now(), LeaseFor: time.Minute, Limit: 1})
 	if err != nil || len(leased) != 1 {
 		t.Fatalf("lease %s: err=%v n=%d", activityType, err, len(leased))
 	}
-	if err := h.eng.OnTaskComplete(h.ctx, leased[0].ID, "w1", leased[0].LeaseToken, nil); err != nil {
+	if err := h.eng.OnTaskComplete(h.ctx, leased[0].ID, "w1", leased[0].LeaseToken, output); err != nil {
 		t.Fatalf("complete %s: %v", activityType, err)
 	}
+	return leased[0]
 }
 
 func (h *harness) status(t *testing.T, id string) model.InstanceStatus {
@@ -88,7 +91,7 @@ func TestHappyPath(t *testing.T) {
 	if got := h.status(t, inst.ID); got != model.StatusWaiting {
 		t.Fatalf("after reserve scheduled, status=%s want WAITING", got)
 	}
-	h.leaseAndComplete(t, "reserve_inventory")
+	h.leaseAndComplete(t, "reserve_inventory", nil)
 
 	// Now parked on manager_approval (wait_signal).
 	h.sched.Drain(h.ctx, 10)
@@ -101,7 +104,7 @@ func TestHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.sched.Drain(h.ctx, 10)
-	h.leaseAndComplete(t, "capture_payment")
+	h.leaseAndComplete(t, "capture_payment", nil)
 	h.sched.Drain(h.ctx, 10)
 
 	if got := h.status(t, inst.ID); got != model.StatusSucceeded {
@@ -137,7 +140,7 @@ func TestTimeoutBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.sched.Drain(h.ctx, 10)
-	h.leaseAndComplete(t, "reserve_inventory")
+	h.leaseAndComplete(t, "reserve_inventory", nil)
 	h.sched.Drain(h.ctx, 10) // parks on manager_approval, creates 24h timer
 
 	// No approval; advance the clock past the 24h timeout and fire the timer.
@@ -152,7 +155,7 @@ func TestTimeoutBranch(t *testing.T) {
 
 	// Routes to cancel_order -> release_inventory activity.
 	h.sched.Drain(h.ctx, 10)
-	h.leaseAndComplete(t, "release_inventory")
+	h.leaseAndComplete(t, "release_inventory", nil)
 	h.sched.Drain(h.ctx, 10)
 
 	if got := h.status(t, inst.ID); got != model.StatusSucceeded {
@@ -168,7 +171,7 @@ func TestSignalBeatsTimer(t *testing.T) {
 	h := newHarness(t)
 	inst, _ := h.eng.StartInstance(h.ctx, StartRequest{WorkflowName: "order_approval", TenantID: "demo", IdempotencyKey: "order-3"})
 	h.sched.Drain(h.ctx, 10)
-	h.leaseAndComplete(t, "reserve_inventory")
+	h.leaseAndComplete(t, "reserve_inventory", nil)
 	h.sched.Drain(h.ctx, 10)
 
 	// Signal arrives, advancing the instance off manager_approval.
@@ -185,7 +188,7 @@ func TestSignalBeatsTimer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h.leaseAndComplete(t, "capture_payment") // proves we took the approval path
+	h.leaseAndComplete(t, "capture_payment", nil) // proves we took the approval path
 	h.sched.Drain(h.ctx, 10)
 	if got := h.status(t, inst.ID); got != model.StatusSucceeded {
 		t.Fatalf("status=%s want SUCCEEDED via approval path", got)
@@ -196,7 +199,7 @@ func TestEarlySignal(t *testing.T) {
 	h := newHarness(t)
 	inst, _ := h.eng.StartInstance(h.ctx, StartRequest{WorkflowName: "order_approval", TenantID: "demo", IdempotencyKey: "order-4"})
 	h.sched.Drain(h.ctx, 10)
-	h.leaseAndComplete(t, "reserve_inventory")
+	h.leaseAndComplete(t, "reserve_inventory", nil)
 
 	// Signal arrives BEFORE the instance parks on manager_approval.
 	if err := h.eng.SignalInstance(h.ctx, inst.ID, "demo", "manager_approval", nil); err != nil {
@@ -205,7 +208,7 @@ func TestEarlySignal(t *testing.T) {
 	// Now drain: entering wait_signal should consume the pending signal and
 	// advance immediately.
 	h.sched.Drain(h.ctx, 10)
-	h.leaseAndComplete(t, "capture_payment")
+	h.leaseAndComplete(t, "capture_payment", nil)
 	h.sched.Drain(h.ctx, 10)
 	if got := h.status(t, inst.ID); got != model.StatusSucceeded {
 		t.Fatalf("status=%s want SUCCEEDED via early-signal path", got)
@@ -218,6 +221,51 @@ func TestStartIdempotent(t *testing.T) {
 	b, _ := h.eng.StartInstance(h.ctx, StartRequest{WorkflowName: "order_approval", TenantID: "demo", IdempotencyKey: "dup"})
 	if a.ID != b.ID {
 		t.Fatalf("idempotent start returned different ids: %s vs %s", a.ID, b.ID)
+	}
+}
+
+func TestActivityPayloadUsesAccumulatedContext(t *testing.T) {
+	h := newHarness(t)
+	input := json.RawMessage(`{"order_id":"order-ctx"}`)
+	inst, err := h.eng.StartInstance(h.ctx, StartRequest{WorkflowName: "order_approval", TenantID: "demo", IdempotencyKey: "order-ctx", Input: input})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h.sched.Drain(h.ctx, 10)
+	reserve := h.leaseAndComplete(t, "reserve_inventory", json.RawMessage(`{"reservation_id":"r1"}`))
+	assertJSONEqual(t, reserve.Payload, `{"input":{"order_id":"order-ctx"},"steps":{}}`)
+
+	h.sched.Drain(h.ctx, 10)
+	if err := h.eng.SignalInstance(h.ctx, inst.ID, "demo", "manager_approval", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.sched.Drain(h.ctx, 10)
+	capture, err := h.st.LeaseTasks(h.ctx, store.LeaseRequest{TenantID: "demo", ActivityType: "capture_payment", WorkerID: "w1", Now: h.clk.Now(), LeaseFor: time.Minute, Limit: 1})
+	if err != nil || len(capture) != 1 {
+		t.Fatalf("lease capture_payment: err=%v n=%d", err, len(capture))
+	}
+	assertJSONEqual(t, capture[0].Payload, `{"input":{"order_id":"order-ctx"},"steps":{"reserve_inventory":{"reservation_id":"r1"}}}`)
+
+	got, err := h.st.GetInstance(h.ctx, inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertJSONEqual(t, got.Context, `{"input":{"order_id":"order-ctx"},"steps":{"reserve_inventory":{"reservation_id":"r1"}}}`)
+}
+
+func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
+	t.Helper()
+	var gotValue any
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatalf("got invalid json %q: %v", got, err)
+	}
+	var wantValue any
+	if err := json.Unmarshal([]byte(want), &wantValue); err != nil {
+		t.Fatalf("want invalid json %q: %v", want, err)
+	}
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Fatalf("json = %s, want %s", got, want)
 	}
 }
 

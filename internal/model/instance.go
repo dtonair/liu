@@ -34,6 +34,7 @@ type Instance struct {
 	Status         InstanceStatus  `json:"status"`
 	TenantID       string          `json:"tenant_id"`
 	Input          json.RawMessage `json:"input,omitempty"`
+	Context        json.RawMessage `json:"context,omitempty"`
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 	Error          string          `json:"error,omitempty"`
 	// RowVersion implements optimistic concurrency control; every persisted

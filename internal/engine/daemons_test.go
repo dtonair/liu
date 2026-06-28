@@ -128,7 +128,7 @@ func TestTimerLoopFires(t *testing.T) {
 	h := &harness{ctx: context.Background(), st: st, eng: eng, sched: NewScheduler(eng, 0, 0), clk: clk}
 	inst, _ := eng.StartInstance(h.ctx, StartRequest{WorkflowName: "order_approval", TenantID: "demo", IdempotencyKey: "tl"})
 	h.sched.Drain(h.ctx, 5)
-	h.leaseAndComplete(t, "reserve_inventory")
+	h.leaseAndComplete(t, "reserve_inventory", nil)
 	h.sched.Drain(h.ctx, 5) // parks on manager_approval w/ 24h timer
 
 	loop := NewTimerLoop(eng, 0, 0)

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -51,6 +52,8 @@ func newInstance(tenant, idem string) *model.Instance {
 		CurrentStep:    "a",
 		Status:         model.StatusRunnable,
 		TenantID:       tenant,
+		Input:          json.RawMessage(`{"order_id":"o1"}`),
+		Context:        json.RawMessage(`{"input":{"order_id":"o1"},"steps":{}}`),
 		IdempotencyKey: idem,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -111,6 +114,9 @@ func testInstances(t *testing.T, s Store) {
 	}
 	if got2.ID != got.ID {
 		t.Fatalf("idempotency returned different instance: %s vs %s", got2.ID, got.ID)
+	}
+	if string(got2.Context) != string(got.Context) {
+		t.Fatalf("idempotency changed context: %s vs %s", got2.Context, got.Context)
 	}
 	// Same key, different tenant is a distinct instance.
 	other := newInstance("t2", "order-42")

@@ -18,12 +18,16 @@ CREATE TABLE IF NOT EXISTS workflow_instances (
     status          text           NOT NULL,
     tenant_id       text           NOT NULL,
     input_json      jsonb,
+    context_json    jsonb,
     idempotency_key text           NOT NULL DEFAULT '',
     error           text           NOT NULL DEFAULT '',
     row_version     integer        NOT NULL DEFAULT 0,
     created_at      timestamptz    NOT NULL DEFAULT now(),
     updated_at      timestamptz    NOT NULL DEFAULT now()
 );
+
+ALTER TABLE workflow_instances
+    ADD COLUMN IF NOT EXISTS context_json jsonb;
 
 -- Idempotent start: one instance per (tenant, idempotency_key) when set.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_instances_idem

@@ -129,6 +129,7 @@ func (e *Engine) StartInstance(ctx context.Context, req StartRequest) (*model.In
 		Status:         model.StatusRunnable,
 		TenantID:       req.TenantID,
 		Input:          req.Input,
+		Context:        initialContext(req.Input),
 		IdempotencyKey: req.IdempotencyKey,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -219,7 +220,7 @@ func (e *Engine) enterStep(ctx context.Context, tx store.Tx, inst *model.Instanc
 			TenantID:       inst.TenantID,
 			ActivityType:   step.Activity,
 			Status:         model.TaskQueued,
-			Payload:        inst.Input,
+			Payload:        contextPayload(inst),
 			IdempotencyKey: taskIdempotencyKey(inst, step),
 			Attempt:        1,
 			MaxAttempts:    step.EffectiveRetry().MaxAttempts,
@@ -326,6 +327,11 @@ func (e *Engine) OnTaskComplete(ctx context.Context, taskID, workerID, leaseToke
 		if _, err := tx.AppendEvent(ctx, &model.Event{InstanceID: inst.ID, Type: model.EventTaskCompleted, StepID: task.StepID, Payload: output, CreatedAt: now}); err != nil {
 			return err
 		}
+		nextContext, err := mergeStepOutput(inst.Context, inst.Input, task.StepID, output)
+		if err != nil {
+			return err
+		}
+		inst.Context = nextContext
 		inst.CurrentStep = step.Next
 		inst.Status = model.StatusRunnable
 		inst.UpdatedAt = now
@@ -517,4 +523,54 @@ func taskIdempotencyKey(inst *model.Instance, step model.Step) string {
 	// step yields a new task) yet stable across retries of that task (retry
 	// does not change the key), satisfying the worker idempotency contract.
 	return fmt.Sprintf("%s|%s|%d", inst.ID, step.ID, inst.RowVersion)
+}
+
+func initialContext(input json.RawMessage) json.RawMessage {
+	body, _ := json.Marshal(workflowContext{
+		Input: rawValue(input),
+		Steps: map[string]json.RawMessage{},
+	})
+	return body
+}
+
+func contextPayload(inst *model.Instance) json.RawMessage {
+	if len(inst.Context) > 0 {
+		return inst.Context
+	}
+	return initialContext(inst.Input)
+}
+
+type workflowContext struct {
+	Input json.RawMessage            `json:"input,omitempty"`
+	Steps map[string]json.RawMessage `json:"steps"`
+}
+
+func mergeStepOutput(contextJSON, input json.RawMessage, stepID string, output json.RawMessage) (json.RawMessage, error) {
+	var ctx workflowContext
+	if len(contextJSON) > 0 {
+		if err := json.Unmarshal(contextJSON, &ctx); err != nil {
+			return nil, fmt.Errorf("merge workflow context: %w", err)
+		}
+	} else {
+		ctx.Input = rawValue(input)
+	}
+	if len(ctx.Input) == 0 {
+		ctx.Input = rawValue(input)
+	}
+	if ctx.Steps == nil {
+		ctx.Steps = map[string]json.RawMessage{}
+	}
+	ctx.Steps[stepID] = rawValue(output)
+	body, err := json.Marshal(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("merge workflow context: %w", err)
+	}
+	return body, nil
+}
+
+func rawValue(v json.RawMessage) json.RawMessage {
+	if len(v) == 0 {
+		return json.RawMessage("null")
+	}
+	return v
 }

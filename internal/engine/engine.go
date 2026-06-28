@@ -72,6 +72,11 @@ func (e *Engine) definition(ctx context.Context, name string, version int) (*mod
 	return d, nil
 }
 
+// Instance returns the current state of an instance.
+func (e *Engine) Instance(ctx context.Context, id string) (*model.Instance, error) {
+	return e.store.GetInstance(ctx, id)
+}
+
 // RegisterDefinition validates and persists a workflow definition (spec FR1).
 func (e *Engine) RegisterDefinition(ctx context.Context, def *model.Definition) error {
 	if err := def.Validate(); err != nil {

@@ -37,7 +37,7 @@ run-engine:
 	LIU_DATABASE_URL="$(DATABASE_URL)" LIU_AUTH_DISABLED=true LIU_MIGRATE_ON_BOOT=true $(GO) run ./cmd/engine
 
 run-worker:
-	LIU_ENGINE_URL=http://localhost:8080 LIU_TENANT_ID=demo \
+	LIU_ENGINE_URL=http://localhost:6789 LIU_TENANT_ID=demo \
 	LIU_ACTIVITY_TYPES=reserve_inventory,capture_payment,release_inventory $(GO) run ./cmd/worker
 
 chaos:

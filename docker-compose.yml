@@ -21,11 +21,11 @@ services:
       dockerfile: Dockerfile.engine
     environment:
       LIU_DATABASE_URL: postgres://liu:liu@postgres:5432/liu?sslmode=disable
-      LIU_HTTP_ADDR: ":8080"
+      LIU_HTTP_ADDR: ":6789"
       LIU_AUTH_DISABLED: "true"
       LIU_MIGRATE_ON_BOOT: "true"
     ports:
-      - "8080:8080"
+      - "6789:6789"
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,7 +35,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     environment:
-      LIU_ENGINE_URL: http://engine:8080
+      LIU_ENGINE_URL: http://engine:6789
       LIU_TENANT_ID: demo
       LIU_ACTIVITY_TYPES: reserve_inventory,capture_payment,release_inventory
     depends_on:

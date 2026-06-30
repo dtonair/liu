@@ -8,5 +8,5 @@ RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(git rev-parse --sho
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/engine /engine
-EXPOSE 8080
+EXPOSE 6789
 ENTRYPOINT ["/engine"]

@@ -45,7 +45,7 @@ Requires Go 1.24 and Docker.
 ```bash
 make up                       # start Postgres
 make migrate                  # apply schema (embedded migrations)
-make run-engine               # terminal 1: API + loops on :8080 (auth disabled)
+make run-engine               # terminal 1: API + loops on :6789 (auth disabled)
 make run-worker               # terminal 2: demo order_approval worker
 ```
 
@@ -53,22 +53,26 @@ Then drive a workflow (auth-disabled mode uses the `X-Tenant-ID` header):
 
 ```bash
 # Register the sample definition
-curl -s localhost:8080/v1/definitions -H 'X-Tenant-ID: demo' \
+curl -s localhost:6789/v1/definitions -H 'X-Tenant-ID: demo' \
   --data-binary @workflows/order_approval.json
 
 # Start an instance
-ID=$(curl -s localhost:8080/v1/workflows/order_approval/instances \
+ID=$(curl -s localhost:6789/v1/workflows/order_approval/instances \
   -H 'X-Tenant-ID: demo' -d '{"idempotency_key":"order-1"}' | jq -r .instance_id)
 
 # The worker completes reserve_inventory; the instance parks on approval.
-curl -s localhost:8080/v1/instances/$ID -H 'X-Tenant-ID: demo' | jq .status   # WAITING
+curl -s localhost:6789/v1/instances/$ID -H 'X-Tenant-ID: demo' | jq .status   # WAITING
 
 # Approve; the worker completes capture_payment.
-curl -s -XPOST localhost:8080/v1/instances/$ID/signals/manager_approval -H 'X-Tenant-ID: demo'
-curl -s localhost:8080/v1/instances/$ID -H 'X-Tenant-ID: demo' | jq .status   # SUCCEEDED
+curl -s -XPOST localhost:6789/v1/instances/$ID/signals/manager_approval -H 'X-Tenant-ID: demo'
+curl -s localhost:6789/v1/instances/$ID -H 'X-Tenant-ID: demo' | jq .status   # SUCCEEDED
 
 # Audit trail
-curl -s localhost:8080/v1/instances/$ID/history -H 'X-Tenant-ID: demo' | jq '.events[].type'
+curl -s localhost:6789/v1/instances/$ID/history -H 'X-Tenant-ID: demo' | jq '.events[].type'
+
+# Create a cron schedule for future runs (5-field cron, timezone defaults UTC).
+curl -s localhost:6789/v1/schedules -H 'X-Tenant-ID: demo' \
+  -d '{"workflow_name":"order_approval","cron":"0 9 * * *","timezone":"Asia/Ho_Chi_Minh","input":{"source":"daily"}}' | jq .
 ```
 
 ## API
@@ -109,7 +113,7 @@ specific version to pin behavior.
 | Env | Default | Meaning |
 |---|---|---|
 | `LIU_DATABASE_URL` | `postgres://liu:liu@localhost:5432/liu?sslmode=disable` | Postgres DSN |
-| `LIU_HTTP_ADDR` | `:8080` | Listen address |
+| `LIU_HTTP_ADDR` | `:6789` | Listen address |
 | `LIU_AUTH_DISABLED` | `false` | Header-based tenant (local dev) |
 | `LIU_JWT_SECRET` | — | HS256 secret when auth is enabled |
 | `LIU_MIGRATE_ON_BOOT` | `false` | Apply migrations at startup |

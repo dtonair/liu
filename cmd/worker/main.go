@@ -22,7 +22,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	client := worker.NewClient(env("LIU_ENGINE_URL", "http://localhost:8080"), hostname())
+	client := worker.NewClient(env("LIU_ENGINE_URL", "http://localhost:6789"), hostname())
 	client.TenantID = env("LIU_TENANT_ID", "demo")
 	client.Token = os.Getenv("LIU_WORKER_TOKEN")
 

@@ -86,7 +86,7 @@ func main() {
 		},
 	})
 
-	addr := env("LIU_HTTP_ADDR", ":8080")
+	addr := env("LIU_HTTP_ADDR", ":6789")
 	httpSrv := &http.Server{
 		Addr:              addr,
 		Handler:           srv.Router(),

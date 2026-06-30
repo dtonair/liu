@@ -167,6 +167,107 @@ func (s *PgStore) RunnableInstances(ctx context.Context, limit int) ([]*model.In
 	return scanInstances(rows)
 }
 
+// --- Schedules ---
+
+func (s *PgStore) CreateSchedule(ctx context.Context, sched *model.Schedule) (*model.Schedule, error) {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO workflow_schedules
+			(id, tenant_id, workflow_name, version, cron, timezone, input_json, enabled, last_run_at, next_run_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		sched.ID, sched.TenantID, sched.WorkflowName, sched.Version, sched.Cron, sched.Timezone,
+		nullableJSON(sched.Input), sched.Enabled, sched.LastRunAt, sched.NextRunAt, sched.CreatedAt, sched.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetSchedule(ctx, sched.ID)
+}
+
+func (s *PgStore) GetSchedule(ctx context.Context, id string) (*model.Schedule, error) {
+	row := s.pool.QueryRow(ctx, scheduleCols+` WHERE id=$1`, id)
+	sched, err := scanSchedule(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return sched, err
+}
+
+func (s *PgStore) ListSchedules(ctx context.Context, tenantID string) ([]*model.Schedule, error) {
+	rows, err := s.pool.Query(ctx, scheduleCols+` WHERE ($1='' OR tenant_id=$1) ORDER BY created_at`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSchedules(rows)
+}
+
+func (s *PgStore) UpdateScheduleEnabled(ctx context.Context, id, tenantID string, enabled bool, nextRunAt time.Time, updatedAt time.Time) (*model.Schedule, error) {
+	row := s.pool.QueryRow(ctx, `
+		UPDATE workflow_schedules
+		SET enabled=$1,
+		    next_run_at=CASE WHEN $2::timestamptz IS NULL THEN next_run_at ELSE $2 END,
+		    updated_at=$3
+		WHERE id=$4 AND tenant_id=$5
+		RETURNING `+scheduleColList,
+		enabled, nullableTime(nextRunAt), updatedAt, id, tenantID)
+	sched, err := scanSchedule(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return sched, err
+}
+
+func (s *PgStore) DeleteSchedule(ctx context.Context, id, tenantID string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM workflow_schedules WHERE id=$1 AND tenant_id=$2`, id, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *PgStore) DueSchedules(ctx context.Context, now time.Time, limit int) ([]*model.Schedule, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH due AS (
+			SELECT id FROM workflow_schedules
+			WHERE enabled
+			  AND next_run_at <= $1
+			  AND (claimed_until IS NULL OR claimed_until <= $1)
+			ORDER BY next_run_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT $2
+		), claimed AS (
+			UPDATE workflow_schedules s
+			SET claimed_until=$3
+			FROM due
+			WHERE s.id = due.id
+			RETURNING `+scheduleColListS+`
+		)
+		SELECT `+scheduleColList+` FROM claimed ORDER BY next_run_at`,
+		now, limit, now.Add(time.Minute))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSchedules(rows)
+}
+
+func (s *PgStore) MarkScheduleRun(ctx context.Context, run ScheduleRun) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE workflow_schedules
+		SET last_run_at=$1, next_run_at=$2, claimed_until=NULL, updated_at=$3
+		WHERE id=$4`,
+		run.RunAt, run.NextRunAt, run.UpdatedAt, run.ScheduleID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // --- Tasks ---
 
 func (s *PgStore) LeaseTasks(ctx context.Context, req LeaseRequest) ([]*model.Task, error) {
@@ -489,6 +590,12 @@ func (t *pgTx) EnqueueOutbox(ctx context.Context, r *model.OutboxRecord) error {
 
 const instanceCols = `SELECT id, workflow_name, version, current_step, status, tenant_id, input_json, context_json, idempotency_key, error, row_version, created_at, updated_at FROM workflow_instances`
 
+const scheduleColList = `id, tenant_id, workflow_name, version, cron, timezone, input_json, enabled, last_run_at, next_run_at, claimed_until, created_at, updated_at`
+
+const scheduleColListS = `s.id, s.tenant_id, s.workflow_name, s.version, s.cron, s.timezone, s.input_json, s.enabled, s.last_run_at, s.next_run_at, s.claimed_until, s.created_at, s.updated_at`
+
+const scheduleCols = `SELECT ` + scheduleColList + ` FROM workflow_schedules`
+
 const taskColList = `id, instance_id, step_id, tenant_id, activity_type, status, payload_json, idempotency_key, attempt, max_attempts, priority, visible_at, leased_by, lease_token, lease_expires_at, created_at`
 
 // taskColListT is taskColList qualified with the `t` alias, for RETURNING in
@@ -525,6 +632,29 @@ func scanInstances(rows pgx.Rows) ([]*model.Instance, error) {
 	return out, rows.Err()
 }
 
+func scanSchedule(r rowScanner) (*model.Schedule, error) {
+	var s model.Schedule
+	var input []byte
+	if err := r.Scan(&s.ID, &s.TenantID, &s.WorkflowName, &s.Version, &s.Cron, &s.Timezone,
+		&input, &s.Enabled, &s.LastRunAt, &s.NextRunAt, &s.ClaimedUntil, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		return nil, err
+	}
+	s.Input = raw(input)
+	return &s, nil
+}
+
+func scanSchedules(rows pgx.Rows) ([]*model.Schedule, error) {
+	var out []*model.Schedule
+	for rows.Next() {
+		s, err := scanSchedule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func scanTask(r rowScanner) (*model.Task, error) {
 	var t model.Task
 	var payload []byte
@@ -554,6 +684,13 @@ func nullableJSON(m json.RawMessage) any {
 		return nil
 	}
 	return []byte(m)
+}
+
+func nullableTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }
 
 var (

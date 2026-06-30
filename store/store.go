@@ -46,6 +46,15 @@ type LeaseRequest struct {
 	Limit        int
 }
 
+// ScheduleRun parameterises advancing a schedule after a due occurrence has
+// successfully started a workflow instance.
+type ScheduleRun struct {
+	ScheduleID string
+	RunAt      time.Time
+	NextRunAt  time.Time
+	UpdatedAt  time.Time
+}
+
 // Store is the durable persistence boundary. Read/utility methods live here;
 // all multi-write state transitions go through Tx so they commit atomically and
 // uphold the engine's advance-under-lock and commit-before-side-effect
@@ -71,6 +80,16 @@ type Store interface {
 	// RunnableInstances returns up to limit instances in RUNNABLE state for the
 	// scheduler to advance.
 	RunnableInstances(ctx context.Context, limit int) ([]*model.Instance, error)
+
+	// --- Schedules ---
+
+	CreateSchedule(ctx context.Context, sched *model.Schedule) (*model.Schedule, error)
+	GetSchedule(ctx context.Context, id string) (*model.Schedule, error)
+	ListSchedules(ctx context.Context, tenantID string) ([]*model.Schedule, error)
+	UpdateScheduleEnabled(ctx context.Context, id, tenantID string, enabled bool, nextRunAt time.Time, updatedAt time.Time) (*model.Schedule, error)
+	DeleteSchedule(ctx context.Context, id, tenantID string) error
+	DueSchedules(ctx context.Context, now time.Time, limit int) ([]*model.Schedule, error)
+	MarkScheduleRun(ctx context.Context, run ScheduleRun) error
 
 	// --- Tasks (queue) ---
 

@@ -8,19 +8,22 @@ A minimal durable workflow engine in Go. Durable orchestration kernel: JSON DSL
 → instance state machine → Postgres task queue (`FOR UPDATE SKIP LOCKED`) → HTTP
 long-poll workers → durable timers → signal inbox → append-only history, with
 idempotency, retry/backoff, transactional outbox, Prometheus metrics, and
-advisory-lock leader election. Not a Temporal clone; no BPMN.
+advisory-lock leader election. Tenant-owned 5-field cron schedules can start
+ordinary workflow instances. Not a Temporal clone; no BPMN.
 
 Spec + plan: `~/code/brain/spec/20260628/0(1)_{spec,impl}_simple_workflow_engine.md`.
+Cron schedules spec + plan: `~/code/brain/spec/20260630/02_{spec,impl}_workflow_cron_schedules.md`.
 
 ## Layout
 
 ```
-cmd/engine    control plane: API + leader-only loops (scheduler/timers/sweeper/outbox/sampler)
+cmd/engine    control plane: API + leader-only loops (scheduler/schedules/timers/sweeper/outbox/sampler)
 cmd/worker    out-of-engine task worker (demo order_approval handlers)
-model      Definition IR, DSL validation, checksum; instance/task/timer/signal/event/outbox types
+model      Definition IR, DSL validation, checksum; schedule/instance/task/timer/signal/event/outbox types
 store      Store interface + Tx; in-memory impl; Postgres impl (pgx); embedded migrations; leader election
-engine     transitions (engine.go), retry calc, scheduler, timer loop, lease sweeper, outbox publisher, metrics sampler, clock
-api        chi router, handlers (definitions/instances/tasks/signals), health, /metrics
+engine     transitions (engine.go), retry calc, scheduler, schedule loop, timer loop, lease sweeper, outbox publisher, metrics sampler, clock
+api        chi router, handlers (definitions/schedules/instances/tasks/signals), health, /metrics
+schedule   local 5-field cron parser + next-run calculation
 security   JWT/header auth + tenant context
 telemetry  slog logger, Prometheus metrics, OTel trace API
 worker     worker HTTP client + Runner (poll/dispatch/heartbeat)
@@ -43,6 +46,13 @@ workflows/          sample definition (order_approval.json)
 5. **Definitions resolved before Tx**: never call `e.definition()` inside a
    `Store.Tx` callback — the in-memory store serializes a whole Tx under one
    mutex and would deadlock. Resolve via `defForInstance` first.
+6. **Scheduled starts are ordinary starts**: cron schedules create normal
+   workflow instances through `StartInstance` with idempotency key
+   `schedule:{schedule_id}:{run_at_rfc3339}`. If the mark-run update fails,
+   replay must not create a duplicate instance.
+7. **No schedule backfill in v1**: after downtime, the schedule loop creates at
+   most one run for a due schedule and advances `next_run_at` to the next future
+   cron occurrence.
 
 ## State machine
 
@@ -61,6 +71,9 @@ and flip back to `RUNNABLE`. Terminal failure → `FAILED`.
   already share it.
 - **Add a metric**: register it in `telemetry.Metrics`, increment at the commit
   boundary in the engine (see `OnTaskComplete`/`OnTaskFail` patterns).
+- **Change cron semantics**: update `schedule/cron.go` and its focused tests,
+  then update README + this file. The parser intentionally supports numeric
+  5-field cron only: `*`, values, lists, ranges, and steps.
 
 ## Testing
 
@@ -80,7 +93,7 @@ because their latest releases require Go 1.25. Use `GOTOOLCHAIN=local` and avoid
 
 ## Known v1 limits
 
-Single active scheduler (advisory-lock leader, no sharding); no in-flight
-version migration; tracing is OTel-API-only (no exporter wired); sub-workflows /
-fan-out / saga-compensation steps are out of scope (IR is designed to admit
-them).
+Single active scheduler/schedule loop (advisory-lock leader, no sharding); no
+schedule backfill/catch-up; no in-flight version migration; tracing is
+OTel-API-only (no exporter wired); sub-workflows / fan-out / saga-compensation
+steps are out of scope (IR is designed to admit them).

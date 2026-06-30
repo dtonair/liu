@@ -24,6 +24,8 @@ type MemStore struct {
 	instances map[string]*model.Instance
 	idemIndex map[string]string // tenant|key -> instance id
 
+	schedules map[string]*model.Schedule
+
 	events  map[string][]*model.Event
 	seq     map[string]int64
 	eventID int64
@@ -46,6 +48,7 @@ func NewMemStore() *MemStore {
 		latest:      map[string]int{},
 		instances:   map[string]*model.Instance{},
 		idemIndex:   map[string]string{},
+		schedules:   map[string]*model.Schedule{},
 		events:      map[string][]*model.Event{},
 		seq:         map[string]int64{},
 		tasks:       map[string]*model.Task{},
@@ -168,6 +171,110 @@ func (m *MemStore) RunnableInstances(_ context.Context, limit int) ([]*model.Ins
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// --- Schedules ---
+
+func (m *MemStore) CreateSchedule(_ context.Context, sched *model.Schedule) (*model.Schedule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.schedules[sched.ID]; ok {
+		return nil, ErrVersionConflict
+	}
+	cp := *sched
+	m.schedules[sched.ID] = &cp
+	ret := cp
+	return &ret, nil
+}
+
+func (m *MemStore) GetSchedule(_ context.Context, id string) (*model.Schedule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.schedules[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	cp := *s
+	return &cp, nil
+}
+
+func (m *MemStore) ListSchedules(_ context.Context, tenantID string) ([]*model.Schedule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*model.Schedule
+	for _, s := range m.schedules {
+		if tenantID != "" && s.TenantID != tenantID {
+			continue
+		}
+		cp := *s
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].CreatedAt.Before(out[b].CreatedAt) })
+	return out, nil
+}
+
+func (m *MemStore) UpdateScheduleEnabled(_ context.Context, id, tenantID string, enabled bool, nextRunAt time.Time, updatedAt time.Time) (*model.Schedule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.schedules[id]
+	if !ok || s.TenantID != tenantID {
+		return nil, ErrNotFound
+	}
+	s.Enabled = enabled
+	if !nextRunAt.IsZero() {
+		s.NextRunAt = nextRunAt
+	}
+	s.UpdatedAt = updatedAt
+	cp := *s
+	return &cp, nil
+}
+
+func (m *MemStore) DeleteSchedule(_ context.Context, id, tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.schedules[id]
+	if !ok || s.TenantID != tenantID {
+		return ErrNotFound
+	}
+	delete(m.schedules, id)
+	return nil
+}
+
+func (m *MemStore) DueSchedules(_ context.Context, now time.Time, limit int) ([]*model.Schedule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*model.Schedule
+	for _, s := range m.schedules {
+		if s.Enabled && !s.NextRunAt.After(now) {
+			if s.ClaimedUntil != nil && s.ClaimedUntil.After(now) {
+				continue
+			}
+			claim := now.Add(time.Minute)
+			s.ClaimedUntil = &claim
+			cp := *s
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].NextRunAt.Before(out[b].NextRunAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (m *MemStore) MarkScheduleRun(_ context.Context, run ScheduleRun) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.schedules[run.ScheduleID]
+	if !ok {
+		return ErrNotFound
+	}
+	last := run.RunAt
+	s.LastRunAt = &last
+	s.NextRunAt = run.NextRunAt
+	s.ClaimedUntil = nil
+	s.UpdatedAt = run.UpdatedAt
+	return nil
 }
 
 // --- Tasks ---
@@ -340,6 +447,7 @@ func (m *MemStore) Close() error { return nil }
 
 type memSnapshot struct {
 	instances map[string]*model.Instance
+	schedules map[string]*model.Schedule
 	events    map[string][]*model.Event
 	seq       map[string]int64
 	eventID   int64
@@ -354,6 +462,7 @@ type memSnapshot struct {
 func (m *MemStore) snapshot() memSnapshot {
 	s := memSnapshot{
 		instances: make(map[string]*model.Instance, len(m.instances)),
+		schedules: make(map[string]*model.Schedule, len(m.schedules)),
 		events:    make(map[string][]*model.Event, len(m.events)),
 		seq:       make(map[string]int64, len(m.seq)),
 		eventID:   m.eventID,
@@ -369,6 +478,10 @@ func (m *MemStore) snapshot() memSnapshot {
 	for k, v := range m.instances {
 		cp := *v
 		s.instances[k] = &cp
+	}
+	for k, v := range m.schedules {
+		cp := *v
+		s.schedules[k] = &cp
 	}
 	for k, v := range m.events {
 		s.events[k] = append([]*model.Event(nil), v...)
@@ -396,6 +509,7 @@ func (m *MemStore) snapshot() memSnapshot {
 
 func (m *MemStore) restore(s memSnapshot) {
 	m.instances = s.instances
+	m.schedules = s.schedules
 	m.events = s.events
 	m.seq = s.seq
 	m.eventID = s.eventID

@@ -66,6 +66,7 @@ func main() {
 		defer lead.Release(context.Background())
 		log.Info("this replica is the scheduler leader")
 		go runLoop(ctx, log, "scheduler", engine.NewScheduler(eng, 100*time.Millisecond, 100).Run)
+		go runLoop(ctx, log, "schedules", engine.NewScheduleLoop(eng, 30*time.Second, 100).Run)
 		go runLoop(ctx, log, "timers", engine.NewTimerLoop(eng, 250*time.Millisecond, 100).Run)
 		go runLoop(ctx, log, "sweeper", engine.NewLeaseSweeper(eng, time.Second).Run)
 		go runLoop(ctx, log, "outbox", engine.NewOutboxPublisher(eng, engine.LogSink{Log: log}, 500*time.Millisecond, 100).Run)

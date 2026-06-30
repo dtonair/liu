@@ -19,6 +19,7 @@ func RunStoreContract(t *testing.T, newStore func() Store) {
 
 	t.Run("definitions", func(t *testing.T) { testDefinitions(t, newStore()) })
 	t.Run("instances", func(t *testing.T) { testInstances(t, newStore()) })
+	t.Run("schedules", func(t *testing.T) { testSchedules(t, newStore()) })
 	t.Run("instance_cas", func(t *testing.T) { testInstanceCAS(t, newStore()) })
 	t.Run("history_seq", func(t *testing.T) { testHistorySeq(t, newStore()) })
 	t.Run("task_lease", func(t *testing.T) { testTaskLease(t, newStore()) })
@@ -57,6 +58,23 @@ func newInstance(tenant, idem string) *model.Instance {
 		IdempotencyKey: idem,
 		CreatedAt:      now,
 		UpdatedAt:      now,
+	}
+}
+
+func newSchedule(tenant, id string, nextRunAt time.Time) *model.Schedule {
+	now := nextRunAt.Add(-time.Hour)
+	return &model.Schedule{
+		ID:           id,
+		TenantID:     tenant,
+		WorkflowName: "wf",
+		Version:      1,
+		Cron:         "*/5 * * * *",
+		Timezone:     "UTC",
+		Input:        json.RawMessage(`{"source":"schedule"}`),
+		Enabled:      true,
+		NextRunAt:    nextRunAt,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 }
 
@@ -132,6 +150,122 @@ func testInstances(t *testing.T, s Store) {
 	runnable, err := s.RunnableInstances(ctx, 10)
 	if err != nil || len(runnable) != 2 {
 		t.Fatalf("runnable: %v n=%d", err, len(runnable))
+	}
+}
+
+func testSchedules(t *testing.T, s Store) {
+	ctx := context.Background()
+	defer s.Close()
+	now := time.Now().UTC().Truncate(time.Second)
+	dueAt := now.Add(-time.Minute)
+	futureAt := now.Add(time.Hour)
+
+	due, err := s.CreateSchedule(ctx, newSchedule("t1", "sched-due", dueAt))
+	if err != nil {
+		t.Fatalf("create due: %v", err)
+	}
+	var input map[string]string
+	if err := json.Unmarshal(due.Input, &input); err != nil {
+		t.Fatalf("schedule input json: %v", err)
+	}
+	if due.ID != "sched-due" || input["source"] != "schedule" {
+		t.Fatalf("unexpected created schedule: %+v", due)
+	}
+	if _, err := s.CreateSchedule(ctx, newSchedule("t1", "sched-future", futureAt)); err != nil {
+		t.Fatalf("create future: %v", err)
+	}
+	if _, err := s.CreateSchedule(ctx, newSchedule("t2", "sched-other", dueAt)); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+
+	got, err := s.GetSchedule(ctx, "sched-due")
+	if err != nil || got.TenantID != "t1" {
+		t.Fatalf("get: %v %+v", err, got)
+	}
+	if _, err := s.GetSchedule(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+
+	list, err := s.ListSchedules(ctx, "t1")
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list t1: %v n=%d", err, len(list))
+	}
+
+	dueList, err := s.DueSchedules(ctx, now, 10)
+	if err != nil {
+		t.Fatalf("due schedules: %v", err)
+	}
+	if len(dueList) != 2 || dueList[0].NextRunAt.After(dueList[1].NextRunAt) {
+		t.Fatalf("unexpected due list: %+v", dueList)
+	}
+	claimedAgain, err := s.DueSchedules(ctx, now, 10)
+	if err != nil {
+		t.Fatalf("due schedules after claim: %v", err)
+	}
+	if len(claimedAgain) != 0 {
+		t.Fatalf("claimed schedules returned again before mark/expiry: %+v", claimedAgain)
+	}
+
+	afterClaimExpiry := now.Add(2 * time.Minute)
+	dueList, err = s.DueSchedules(ctx, afterClaimExpiry, 10)
+	if err != nil {
+		t.Fatalf("due schedules after claim expiry: %v", err)
+	}
+	if len(dueList) != 2 {
+		t.Fatalf("want due schedules after claim expiry, got %+v", dueList)
+	}
+
+	paused, err := s.UpdateScheduleEnabled(ctx, "sched-due", "t1", false, time.Time{}, now)
+	if err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if paused.Enabled || !paused.NextRunAt.Equal(dueAt) {
+		t.Fatalf("pause changed wrong fields: %+v", paused)
+	}
+	if _, err := s.UpdateScheduleEnabled(ctx, "sched-due", "t2", true, now, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-tenant pause should be not found, got %v", err)
+	}
+
+	dueList, err = s.DueSchedules(ctx, afterClaimExpiry.Add(2*time.Minute), 10)
+	if err != nil {
+		t.Fatalf("due after pause: %v", err)
+	}
+	if len(dueList) != 1 || dueList[0].ID != "sched-other" {
+		t.Fatalf("paused schedule remained due: %+v", dueList)
+	}
+
+	resumeAt := now.Add(2 * time.Hour)
+	resumed, err := s.UpdateScheduleEnabled(ctx, "sched-due", "t1", true, resumeAt, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if !resumed.Enabled || !resumed.NextRunAt.Equal(resumeAt) {
+		t.Fatalf("resume failed: %+v", resumed)
+	}
+
+	nextAt := now.Add(24 * time.Hour)
+	if err := s.MarkScheduleRun(ctx, ScheduleRun{ScheduleID: "sched-other", RunAt: dueAt, NextRunAt: nextAt, UpdatedAt: now}); err != nil {
+		t.Fatalf("mark run: %v", err)
+	}
+	marked, err := s.GetSchedule(ctx, "sched-other")
+	if err != nil {
+		t.Fatalf("get marked: %v", err)
+	}
+	if marked.LastRunAt == nil || !marked.LastRunAt.Equal(dueAt) || !marked.NextRunAt.Equal(nextAt) {
+		t.Fatalf("mark run did not persist: %+v", marked)
+	}
+	if err := s.MarkScheduleRun(ctx, ScheduleRun{ScheduleID: "missing", RunAt: dueAt, NextRunAt: nextAt, UpdatedAt: now}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing mark should be not found, got %v", err)
+	}
+
+	if err := s.DeleteSchedule(ctx, "sched-future", "t2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-tenant delete should be not found, got %v", err)
+	}
+	if err := s.DeleteSchedule(ctx, "sched-future", "t1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetSchedule(ctx, "sched-future"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted schedule should be not found, got %v", err)
 	}
 }
 

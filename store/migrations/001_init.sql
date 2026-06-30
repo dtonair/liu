@@ -38,6 +38,32 @@ CREATE INDEX IF NOT EXISTS ix_instances_status   ON workflow_instances (status);
 CREATE INDEX IF NOT EXISTS ix_instances_tenant   ON workflow_instances (tenant_id);
 CREATE INDEX IF NOT EXISTS ix_instances_workflow ON workflow_instances (workflow_name);
 
+CREATE TABLE IF NOT EXISTS workflow_schedules (
+    id            text        PRIMARY KEY,
+    tenant_id     text        NOT NULL,
+    workflow_name text        NOT NULL,
+    version       integer     NOT NULL DEFAULT 0,
+    cron          text        NOT NULL,
+    timezone      text        NOT NULL DEFAULT 'UTC',
+    input_json    jsonb,
+    enabled       boolean     NOT NULL DEFAULT true,
+    last_run_at   timestamptz,
+    next_run_at   timestamptz NOT NULL,
+    claimed_until timestamptz,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE workflow_schedules
+    ADD COLUMN IF NOT EXISTS claimed_until timestamptz;
+
+CREATE INDEX IF NOT EXISTS ix_schedules_tenant
+    ON workflow_schedules (tenant_id, created_at);
+
+CREATE INDEX IF NOT EXISTS ix_schedules_due
+    ON workflow_schedules (next_run_at)
+    WHERE enabled;
+
 CREATE TABLE IF NOT EXISTS workflow_history (
     id           bigserial   PRIMARY KEY,
     instance_id  text        NOT NULL,

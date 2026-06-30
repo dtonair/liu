@@ -18,6 +18,8 @@ type Metrics struct {
 	tasksFailed       prometheus.Counter
 	retries           prometheus.Counter
 	timersFired       prometheus.Counter
+	scheduleRuns      prometheus.Counter
+	scheduleFailures  prometheus.Counter
 	leasesReclaimed   prometheus.Counter
 	advanceLatency    prometheus.Histogram
 	instancesByStatus *prometheus.GaugeVec
@@ -43,6 +45,12 @@ func NewMetrics() *Metrics {
 		timersFired: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "liu_timers_fired_total", Help: "Durable timers fired.",
 		}),
+		scheduleRuns: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "liu_schedule_runs_started_total", Help: "Scheduled workflow runs started.",
+		}),
+		scheduleFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "liu_schedule_run_failures_total", Help: "Scheduled workflow run attempts that failed.",
+		}),
 		leasesReclaimed: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "liu_leases_reclaimed_total", Help: "Expired task leases reclaimed.",
 		}),
@@ -55,7 +63,7 @@ func NewMetrics() *Metrics {
 		}, []string{"status"}),
 	}
 	reg.MustRegister(m.transitions, m.tasksCompleted, m.tasksFailed, m.retries,
-		m.timersFired, m.leasesReclaimed, m.advanceLatency, m.instancesByStatus)
+		m.timersFired, m.scheduleRuns, m.scheduleFailures, m.leasesReclaimed, m.advanceLatency, m.instancesByStatus)
 	return m
 }
 
@@ -99,6 +107,20 @@ func (m *Metrics) RetryScheduled() {
 func (m *Metrics) TimerFired() {
 	if m != nil {
 		m.timersFired.Inc()
+	}
+}
+
+// ScheduleRunStarted records a scheduled workflow run start.
+func (m *Metrics) ScheduleRunStarted() {
+	if m != nil {
+		m.scheduleRuns.Inc()
+	}
+}
+
+// ScheduleRunFailed records a failed scheduled workflow run attempt.
+func (m *Metrics) ScheduleRunFailed() {
+	if m != nil {
+		m.scheduleFailures.Inc()
 	}
 }
 

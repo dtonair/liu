@@ -21,7 +21,7 @@ func pgTestURL(t *testing.T) string {
 func truncateAll(t *testing.T, s *PgStore) {
 	t.Helper()
 	_, err := s.pool.Exec(context.Background(),
-		`TRUNCATE workflow_definitions, workflow_instances, workflow_history, tasks, timers, signals, outbox RESTART IDENTITY`)
+		`TRUNCATE workflow_definitions, workflow_instances, workflow_schedules, workflow_history, tasks, timers, signals, outbox RESTART IDENTITY`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}

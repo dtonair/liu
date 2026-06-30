@@ -19,6 +19,8 @@ a Temporal clone (no code-as-workflow replay) and not a BPMN suite.
   `end` (terminal success).
 - **Instance** — one running occurrence; status `RUNNABLE → WAITING →
   SUCCEEDED/FAILED`.
+- **Schedule** — a tenant-owned 5-field cron trigger that starts workflow
+  instances with deterministic idempotency keys.
 - **Task** — a unit of work a worker leases, runs, and reports.
 - **Signal** — an external event delivered to an instance's inbox.
 - **Worker** — an out-of-engine process that polls for tasks and runs business
@@ -27,9 +29,9 @@ a Temporal clone (no code-as-workflow replay) and not a BPMN suite.
 ## Architecture
 
 ```
-client ─▶ API ─▶ registry / instances / history / tasks / timers / signals (Postgres)
+client ─▶ API ─▶ registry / schedules / instances / history / tasks / timers / signals (Postgres)
                  ▲                                   │
-   leader-only loops: scheduler · timers · sweeper · outbox · sampler
+   leader-only loops: scheduler · schedules · timers · sweeper · outbox · sampler
 workers ◀── poll / complete / fail / heartbeat ──▶ API
 ```
 
@@ -79,6 +81,12 @@ claim of an HS256 bearer JWT.
 |---|---|---|
 | POST | `/v1/definitions` | Register a definition (409 on checksum conflict, 400 if invalid) |
 | POST | `/v1/workflows/{name}/instances` | Start an instance (idempotent on `idempotency_key`) |
+| POST | `/v1/schedules` | Create a cron workflow schedule |
+| GET | `/v1/schedules` | List schedules |
+| GET | `/v1/schedules/{id}` | Get a schedule |
+| POST | `/v1/schedules/{id}/pause` | Disable a schedule |
+| POST | `/v1/schedules/{id}/resume` | Enable a schedule and recompute `next_run_at` |
+| DELETE | `/v1/schedules/{id}` | Delete a schedule; existing instances remain |
 | GET | `/v1/instances` | List instances (filter `?status=&workflow=`) |
 | GET | `/v1/instances/{id}` | Get instance state |
 | GET | `/v1/instances/{id}/history` | Append-only event history |
@@ -88,6 +96,13 @@ claim of an HS256 bearer JWT.
 | POST | `/v1/tasks/{id}/fail` | Report failure (`retryable`, `error_class`) |
 | POST | `/v1/tasks/{id}/heartbeat` | Extend a lease |
 | GET | `/healthz` `/readyz` `/metrics` | Health and Prometheus metrics |
+
+Schedules use standard 5-field cron syntax: minute, hour, day-of-month, month,
+day-of-week. Month/weekday names and seconds are not supported. If the engine is
+down through several occurrences, v1 starts at most one run after recovery and
+sets `next_run_at` to the next future occurrence. `version: 0` or omitted means
+each scheduled run uses the latest registered workflow definition; set a
+specific version to pin behavior.
 
 ## Configuration (engine)
 

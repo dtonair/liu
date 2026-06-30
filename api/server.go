@@ -69,6 +69,13 @@ func (s *Server) Router() http.Handler {
 		r.Get("/v1/instances/{id}/history", s.handleGetHistory)
 		r.Post("/v1/instances/{id}/signals/{name}", s.handleSignal)
 
+		r.Post("/v1/schedules", s.handleCreateSchedule)
+		r.Get("/v1/schedules", s.handleListSchedules)
+		r.Get("/v1/schedules/{id}", s.handleGetSchedule)
+		r.Post("/v1/schedules/{id}/pause", s.handlePauseSchedule)
+		r.Post("/v1/schedules/{id}/resume", s.handleResumeSchedule)
+		r.Delete("/v1/schedules/{id}", s.handleDeleteSchedule)
+
 		r.Post("/v1/tasks/poll", s.handlePollTask)
 		r.Post("/v1/tasks/{id}/complete", s.handleCompleteTask)
 		r.Post("/v1/tasks/{id}/fail", s.handleFailTask)

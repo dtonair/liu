@@ -54,6 +54,8 @@ func TestMetricsExposed(t *testing.T) {
 	text := string(scrape)
 	for _, want := range []string{
 		"liu_tasks_completed_total",
+		"liu_schedule_runs_started_total",
+		"liu_schedule_run_failures_total",
 		"liu_advance_seconds",
 		"liu_transitions_total",
 		"liu_instances",
